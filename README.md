@@ -2,7 +2,7 @@
 
 ## Overview
 
-**AXC1D** is a C++ implementation of a 1D meanline stage-stacking code for multistage axial compressor analysis, based on NASA's STGSTK methodology (Technical Paper 2020, 1982). It enables rapid off-design performance prediction across operating speeds and flow ranges.
+**AXC1D** is a Python application for Linux OS that makes use of a custom 1D meanline stage-stacking code for multistage axial compressor analysis, based on NASA's STGSTK methodology (Technical Paper 2020, 1982). It enables rapid off-design performance prediction across operating speeds and flow ranges.
 
 **Key Capabilities:**
 - Simplifies 3D blade flow to single meanline representation at intermediate radius
@@ -124,14 +124,20 @@ PHYSICS_MODELS:
     Efficiency_decrement from boundary_layer_models
 ```
 
-## Usage
-
+## Installation
 ```bash
-git clone git@https://github.com/fletxcher/axc1d
-cd /home/axc1d/src && rm -rf build && mkdir build && cd build
-cmake .. && ninja && ./axc1d
+git clone git@https://github.com/fletxcher/axc1d 
+cd axc1d/
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirments.txt
 ```
-**Prerequisites:** Qt 5.15+/6.0+, CMake 3.16+, C++17 compiler
+
+## Usage
+```bash
+cd axc1d/src/python/
+python application.py
+```
 
 ## Methodology
 
