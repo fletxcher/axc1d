@@ -1,8 +1,8 @@
 import math 
 import logging
+from typing import List
 import numpy as np
 from manager import AXC1DEventManager 
-from parser import AXC1DParser 
 
 class AXC1DSolver:
     """
@@ -16,17 +16,21 @@ class AXC1DSolver:
             logger: Logger instance for diagnostic and informational output.
         """
         self.logger = logger
-        self.parser = AXC1DParser(logger = self.logger)
 
-        # gas constant (ft·lbf/(lbmol·°R))
-        self.ru = 1545.44 
-        self.pi = 3.14159
-        # gravitational acceleration (US customary units), not SI units!
-        self.g  = 32.1740
-        # mechanical equivalent of heat (ft·lbf/Btu)
-        self.aj = 778.12 
-        # radians to degrees conversion
-        self.rad = 57.29578
+        self.ru = None
+        self.pi = None
+        self.g  = None
+        self.aj = None
+        self.rad = None
+
+        self.rg = None 
+        self.dcp = None
+        self.gj = None
+        self.g2j = None 
+        self.rpmrad = None
+
+        self.ts = None
+        self.gamma = None
 
         self.input_params = None
         self.deviation_factors = None
@@ -46,70 +50,14 @@ class AXC1DSolver:
         self.bet2m = []
         self.rk2m = self.sk2m = self.cb2m = []
         self.cb2mr = self.cb3mr = []
-    
-    def csinpt(self, file_path: str):
+
+    def cml(self, rotor_tip: float, rotor_hub: float):
         """
-        Read and process input data for compressor analysis.
-        
-        Reads input data in either SI or U.S. customary units. Converts SI input 
-        to U.S. customary units for calculations. Supports two input options for 
-        design stage performance: 
-        (1) stage pressure ratio and adiabatic efficiency,
-        (2) stage characteristics (pressure coefficient vs. flow coefficient and efficiency vs. flow coefficient).
-        
-        :param file_path: path to the input deck file
-        :type file_path: str
+        Calculate the meanline radius
         """
-        lines = []
-        with open(file_path, "r") as f:
-            for line in f.readlines():
-                lines.append(line.strip())
-        f.close()
+        return math.sqrt((math.pow(rotor_tip, 2) + math.pow(rotor_hub, 2)) / 2)
 
-        # SI INPUT PARAMETERS
-        # [STAGES, SPEEDS, P_0 IN, T_0 IN, POINTS, MOLE WT DES, RPM DES, FLOW ]
-        self.input_params = self.parser.input_params(lines) 
-
-        # DEVIATION FACTORS
-        # [SPDPSI, SPDPHI, DRDEVG, DRDEVN, DRDEVP, UNITS]
-        self.deviation_factors = self.parser.deviation_factors(lines)
-
-        # SPECIFIC HEAT COEFFICIENTS
-        # [CPCO(1), CPCO(2), CPCO(3), CPCO(4), CPCO(5), CPCO(6)]
-        self.specific_heat_coefficients = self.parser.specific_heat_coefficients(lines)
-
-        # STAGE GEOMETRY 
-        # [[STAGE, RT2, RH2, RT3, RH3, BET2M, CB2M, CB2MR, CB3MR, RK2M, RSOLM, SK2M],[...], ...N]
-        # where N = number of stages
-        self.stage_geometry = self.parser.stage_geometry(lines)
-
-        # STAGE GEOMETRY 
-        # [[STAGE, PR, ETAINP],[...], ...N]
-        # where N = number of stages
-        self.stage_performance_characteristics = self.parser.stage_performance_characteristics(lines)
-
-        # EFFICIENCY RATIO TABLE (PCTSPD vs ETARAT)
-        # [[PCTSPD, ETARAT], ...N]
-        # where N = 5
-        self.efficiency_ratio_table = self.parser.efficiency_ratio_table(lines)
-
-        # BLEED TABLE (STAGE, PCT SPD)
-        # [[PCT SPD, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], [], ...N]
-        # where N = 5
-        self.bleed_table = self.parser.bleed_table(lines)
-
-        # INPUT DESIGN CHARACTERISTICS
-        self.input_design_characteristics = self.parser.input_design_characteristics(lines)
-
-    def cml(self):
-        """
-        Calculate compressor meanline flow parameters.
-        
-        :param self: Description
-        """
-        pass
-
-    def csref(self):
+    def cspref(self):
         """
         Calculate meanline velocity diagrams and design stage performance.
         
@@ -124,17 +72,30 @@ class AXC1DSolver:
         """
         pass
 
-    def cpf(self):
+    def cpf(self, ts: float):
         """
         Calculate specific heat and gamma as functions of temperature.
         
         Computes Cp from a fifth-degree polynomial of static temperature, and 
-        derives gamma from the relation gamma = Cp / (Cp - R). Supplies properties 
-        for flow calculations in other subroutines.
+        derives gamma from the relation gamma = Cp / (Cp - R). 
+        Supplies properties for flow calculations in other subroutines.
         
         :param self: Description
+        :param ts: Static Temperature
+        :type ts: float
         """
-        
+        # C_p : C_1 + C_2 * t + C_3 * t^2 + C_4 ^ t^3 + C_5 * t^4 + C_6 * t^5
+        self.ts = ts
+        self.specific_heat = (
+            (self.specific_heat_coefficients[0]) + 
+            (self.specific_heat_coefficients[1] * self.ts) +
+            (self.specific_heat_coefficients[2] * pow(self.ts, 2)) +
+            (self.specific_heat_coefficients[3] * pow(self.ts, 3)) +
+            (self.specific_heat_coefficients[4] * pow(self.ts, 4)) +
+            (self.specific_heat_coefficients[5] * pow(self.ts, 5)) 
+        )
+        # γ = C_p ​/ (C_p​ - R​)
+        self.gamma = self.specific_heat / (self.specific_heat - self.ru)
         pass
 
     def cseta(self):
@@ -205,15 +166,59 @@ class AXC1DSolver:
         """
         pass
 
-    def run(self, file_path: str):
+    def run(self, input_params: List[float], deviation_factors: List[float], specific_heat_coefficients: List[float], 
+            stage_geometry: List[dict], bleed_table: List[List[float]], efficiency_ratio_table: List[List[float]]):
         """
         Execute the compressor analysis logic.
         
         :param file_path: path to the input deck file
         :type file_path: str
         """
-        # input_params, deviation_factors, specific_heat_coefficients, stage_geometry, stage_performance_characteristics, efficiency_ratio_table, bleed_table, input_design_characteristics, stage_reference_params, dpsis_table, computed_characteristics =  self.csinpt(file_path)
-        self.csinpt(file_path)
+        self.logger.info("A")
+        # gas constant (ft·lbf/(lbmol·°R))
+        self.ru = 1545.44 
+        # pi constant 
+        self.pi = 3.14159
+        # gravitational acceleration (US customary units), not SI units!
+        self.g  = 32.1740
+        # mechanical equivalent of heat (ft·lbf/Btu)
+        self.aj = 778.12 
+        # radians to degrees conversion
+        self.rad = 57.29578
+
+        # SI INPUT PARAMETERS
+        # [STAGES, SPEEDS, P_0 IN, T_0 IN, POINTS, MOLE WT DES, RPM DES, FLOW ]
+        self.input_params = input_params
+
+        # DEVIATION FACTORS
+        # [SPDPSI, SPDPHI, DRDEVG, DRDEVN, DRDEVP, UNITS]
+        self.deviation_factors = deviation_factors
+
+        # SPECIFIC HEAT COEFFICIENTS
+        # [CPCO(1), CPCO(2), CPCO(3), CPCO(4), CPCO(5), CPCO(6)]
+        self.specific_heat_coefficients = specific_heat_coefficients
+
+        # STAGE GEOMETRY 
+        # [[STAGE, RT2, RH2, RT3, RH3, BET2M, CB2M, CB2MR, CB3MR, RK2M, RSOLM, SK2M],[...], ...N]
+        # where N = number of stages
+        self.stage_geometry = stage_geometry
+
+        # BLEED TABLE (STAGE, PCT SPD)
+        # [[PCT SPD, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], [], ...N]
+        # where N = 5
+        self.bleed_table = bleed_table
+
+        # EFFICIENCY RATIO TABLE (PCTSPD vs ETARAT)
+        # [[PCTSPD, ETARAT], ...N]
+        # where N = 5
+        self.efficiency_ratio_table = efficiency_ratio_table
+
+        self.rg = self.ru / self.input_params[5]
+        self.dcp = self.rg / self.aj
+        self.gj = self.g * self.aj
+        self.g2j = self.gj * 2.0 
+        self.rpmrad = self.pi / 360.0 
+
         # for each stage
         for i in range(int(self.input_params[0])):
             # calculate flow areas
@@ -230,9 +235,9 @@ class AXC1DSolver:
 
             # calculate blade speeds
             # blade speed at the inlet: RM2(I) * DESRPM * RPMRAD
-            self.um2[i] = self.rm2[i] * self.input_params[7] * "RPMRAD"
+            self.um2[i] = self.rm2[i] * self.input_params[7] * self.rpmrad
             # blade speed at the outlet: RM3(I) * DESRPM * RPMRAD
-            self.um3[i] = self.rm3[i] * self.input_params[7] * "RPMRAD"
+            self.um3[i] = self.rm3[i] * self.input_params[7] * self.rpmrad
 
             # convert degrees to radians: BET2M(I,1) = BET2M(I,1)/RAD
             self.stage_geometry[i][5] = self.stage_geometry[i][5] / self.rad      
@@ -245,9 +250,8 @@ class AXC1DSolver:
             self.cb2mr[i] = self.cb2mr[i] / self.rad
             self.cb3mr[i] = self.cb3mr[i] / self.rad
 
-
         # call csref method for reference calculations
-        self.csref()
+        self.cspref()
 
         # if efficiency not provided, calculate it
         # IF(ETADES(I,1,1) .EQ. 0.0) CALL CSETA  
@@ -275,15 +279,7 @@ class AXC1DSolver:
         # TODO: option to alter flow coefficient 
 
         # write the results to the terminal
-        output = f"""
-        \n
-        ================================================================================
-        AXC1D STAGE STACKING PROGRAM
-        ================================================================================
-        \n
-        """
-        self.logger.info(output)
-        # for i in range(int(self.input_params[0])):
+        self.logger.info(f"")
 
         
 

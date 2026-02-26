@@ -60,5 +60,5 @@ class AXC1DPlotter(QWidget):
         plot.addLegend()
         plot.showGrid(x = True, y = True)
         self.plots.addWidget(plot)
-        # self.plots.setContentsMargins(20, 20, 20, 20)
         self.setLayout(self.plots)
+

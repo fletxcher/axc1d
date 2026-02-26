@@ -7,10 +7,10 @@ from PyQt6.QtWidgets import  (
     QWidget, QStatusBar, 
     QLabel
 )
-from editor import AXC1DTextEditor
 from plotter import AXC1DPlotter
 from solver import AXC1DSolver
 from manager import AXC1DEventManager
+from editor import AXC1DInputEditor
 
 class AXC1DMainWindow(QMainWindow):
     """
@@ -57,9 +57,10 @@ class AXC1DMainWindow(QMainWindow):
         self.event_manager = AXC1DEventManager(logger = self.logger)
 
         # setup custom components
-        self.editor = AXC1DTextEditor(logger = self.logger, event_manager = self.event_manager)
-        self.plotter = AXC1DPlotter(logger = self.logger, event_manager = self.event_manager)
+        # self.editor = AXC1DTextEditor(logger = self.logger, event_manager = self.event_manager)
         self.solver = AXC1DSolver(logger = self.logger, event_manager = self.event_manager)
+        self.editor = AXC1DInputEditor(logger = self.logger, event_manager = self.event_manager)
+        self.plotter = AXC1DPlotter(logger = self.logger, event_manager = self.event_manager)
 
         # build menu bar
         self.menu_bar = self.menuBar()
@@ -101,17 +102,19 @@ class AXC1DMainWindow(QMainWindow):
         # menu option to edit plots
         edit_plot_action = QAction("&Edit Plot", self)
         edit_plot_action.triggered.connect(self.plotter.edit_plot)
-        edit_plot_action.setShortcut(QKeySequence("Ctrl+D"))
+        edit_plot_action.setShortcut(QKeySequence("Ctrl+E"))
         self.plot_menu.addAction(edit_plot_action)
 
         # simulations menu
         self.simulation_menu = self.menu_bar.addMenu("&Simulations")
         # menu option to run the simulation
         run_simulation_action = QAction("&Run Simulation", self)
-        run_simulation_action.setEnabled(False) 
+
+        # run_simulation_action.setEnabled(False) 
         # subscribe to the open file event so that way the run simulation is only enabled once a file is opened
-        self.event_manager.subscribe("open_file", lambda: run_simulation_action.setEnabled(True))
-        run_simulation_action.triggered.connect(lambda: self.solver.run(self.editor.file_path))
+        # self.event_manager.subscribe("open_file", lambda: run_simulation_action.setEnabled(True))
+        
+        run_simulation_action.triggered.connect(lambda: self.solver.run(**self.editor.extract_info()))
         # create a keyboard shortcut from running the simulation
         run_simulation_action.setShortcut(QKeySequence("Ctrl+R"))
         self.simulation_menu.addAction(run_simulation_action)
@@ -119,7 +122,7 @@ class AXC1DMainWindow(QMainWindow):
         # self.simulation_menu.addAction("&Edit Simulation Path")
 
         self.settings_menu = self.menu_bar.addMenu("&Settings")
-        # menu option to open the settinsg menu
+        # menu option to open the settings menu
         open_settings_action = QAction("&Open Settings", self)
         open_settings_action.triggered.connect(self.open_settings)
         open_settings_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
@@ -171,7 +174,9 @@ class AXC1DMainWindow(QMainWindow):
         :param self: Description
         """
         # open the settings menu
-        self.logger.info(f"Test Open Settings")
+        self.logger.info(f"Edit Tables (Efficiency Ratio Table & Bleed Table)")
+        self.logger.info(f"Edit Solver Settings")
+        self.logger.info(f"Observe Logs")
         
 
 application = QApplication(sys.argv)
