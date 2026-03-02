@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout
 )
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve
-from manager import AXC1DEventManager
 
 class AccordionSection(QWidget):
     def __init__(self, title: str, parent=None):
@@ -118,7 +117,12 @@ class AccordionWidget(QScrollArea):
         super().__init__(parent)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.setStyleSheet("""
+            QScrollArea { 
+                border: none; 
+                background: transparent; 
+            }
+        """)
 
         self._container = QWidget()
         self._layout = QVBoxLayout(self._container)
@@ -150,10 +154,9 @@ class AccordionWidget(QScrollArea):
             s.expand()
 
 class AXC1DInputEditor(QWidget):
-    def __init__(self, logger: logging.Logger, event_manager: AXC1DEventManager, parent = None):
+    def __init__(self, logger: logging.Logger,  parent = None):
         super().__init__(parent)
         self.logger = logger
-        self.event_manager = event_manager
         self.file_path = None
         
         # Store widget references for later extraction
@@ -187,7 +190,7 @@ class AXC1DInputEditor(QWidget):
             ("T_0_IN", "T\u2080 In"),
             ("POINTS", "Points Per Characteristic"),
             ("MOLE_WT", "Molecular Weight (g/mol)"),
-            ("RPM", "Rotations Per Minute"),
+            ("RPM", "Revolutions Per Minute"),
             ("MASS_FLOW", "Mass Flow Rate")
         ]
         for var, desc in input_params_config:
@@ -297,82 +300,9 @@ class AXC1DInputEditor(QWidget):
         layout = QVBoxLayout()
         self.setLayout(layout)
         layout.addWidget(accordion)
-
-    def extract_info(self):
-        """
-        Extract information from UI widgets and create a structured dict
-        """
-        config = {}
         
-        # Extract SI Input Parameters
-        config["SI Input Parameters"] = {}
-        for key, widget in self.input_params_widgets.items():
-            config["SI Input Parameters"][key] = widget.text()
-        
-        # Extract Deviation Factors
-        config["Deviation Factors"] = {}
-        for key, widget in self.deviation_factors_widgets.items():
-            config["Deviation Factors"][key] = "1.0" if widget.isChecked() else "0.0"
-        
-        # Extract Specific Heat Coefficients
-        config["Specific Heat Coefficients"] = {}
-        for key, widget in self.specific_heat_widgets.items():
-            config["Specific Heat Coefficients"][key] = widget.text()
-        
-        # Extract Stage Geometry
-        config["Stage Geometry"] = {}
-        for key, widget in self.stage_geometry_widgets.items():
-            config["Stage Geometry"][key] = widget.text()
-        
-        # Extract Characteristics
-        config["Input Characteristics"] = {}
-        for key, widget in self.characteristics_widgets.items():
-            config["Input Characteristics"][key] = widget.text()
-        
-        # Extract Efficiency Table
-        config["Efficiency Ratio Table"] = []
-        if self.efficiency_table:
-            for row in range(self.efficiency_table.rowCount()):
-                pctspd = self.efficiency_table.item(row, 0).text()
-                etarat = self.efficiency_table.item(row, 1).text()
-                config["Efficiency Ratio Table"].append({
-                    "PCTSPD": float(pctspd) if pctspd else 0.0,
-                    "ETARAT": float(etarat) if etarat else 0.0
-                })
-        
-        # Extract Bleed Table
-        config["Bleed Table"] = []
-        if self.bleed_table:
-            for row in range(self.bleed_table.rowCount()):
-                speed = self.bleed_table.item(row, 0).text()
-                stage_values = []
-                # Columns 1+ are stage bleed values
-                for col in range(1, self.bleed_table.columnCount()):
-                    value = self.bleed_table.item(row, col).text() if self.bleed_table.item(row, col) else "0.000"
-                    try:
-                        stage_values.append(float(value))
-                    except:
-                        stage_values.append(0.0)
-                config["Bleed Table"].append({
-                    "PCTSPD": float(speed) if speed else 0.0,
-                    "stage_values": stage_values
-                })
-        
-        # Extract Characteristic Tables
-        config["Characteristic Tables"] = []
-        for table in self.characteristic_tables:
-            table_data = []
-            for row in range(table.rowCount()):
-                pctspd = table.item(row, 0).text()
-                etarat = table.item(row, 1).text()
-                table_data.append({
-                    "PCTSPD": float(pctspd) if pctspd else 0.0,
-                    "ETARAT": float(etarat) if etarat else 0.0
-                })
-            config["Characteristic Tables"].append(table_data)
-        
-        self.logger.info(f"Config: {json.dumps(config, indent=2, default=str)}")
-        return config
+        # Populate with default values
+        self.populate_default_values()
 
     def rebuild_stage_sections(self):
         """Rebuild stage geometry, characteristics, and bleed table when STAGES changes"""
@@ -440,6 +370,7 @@ class AXC1DInputEditor(QWidget):
         """Dynamically create input characteristics based on number of stages and speeds"""
         try:
             num_stages = int(float(self.input_params_widgets['STAGES'].text() or 0))
+            num_points = int(float(self.input_params_widgets['POINTS'].text() or 8))
         except (ValueError, TypeError):
             return
         
@@ -466,47 +397,53 @@ class AXC1DInputEditor(QWidget):
                 speed_accordion = AccordionSection(f"▶ {speed:.3f} PCT SPD")
                 stage_accordion.add_widget(speed_accordion)
                 
-                # PHIDES
-                phides_row = QWidget()
-                phides_layout = QHBoxLayout(phides_row)
-                phides_layout.setContentsMargins(0, 0, 0, 0)
-                phides_label = QLabel(f"PHIDES:")
-                phides_label.setToolTip("Stage Flow Coefficient At Design Speed")
-                phides_label.setFixedWidth(80)
-                phides_widget = QLineEdit()
-                phides_layout.addWidget(phides_label)
-                phides_layout.addWidget(phides_widget)
-                speed_accordion.add_widget(phides_row)
-                key = f"STAGE_{stage_num}_SPEED_{speed:.3f}_PHIDES"
-                self.characteristics_widgets[key] = phides_widget
+                # Create table for this speed point with 3 rows (PHIDES, PSIDES, ETADES)
+                # and num_points columns for values
+                table = QTableWidget()
+                table.setRowCount(3)
+                table.setColumnCount(num_points + 1)  # +1 for row labels
                 
-                # PSIDES
-                psides_row = QWidget()
-                psides_layout = QHBoxLayout(psides_row)
-                psides_layout.setContentsMargins(0, 0, 0, 0)
-                psides_label = QLabel(f"PSIDES:")
-                psides_label.setToolTip("Stage Pressure Coefficient At Design Speed")
-                psides_label.setFixedWidth(80)
-                psides_widget = QLineEdit()
-                psides_layout.addWidget(psides_label)
-                psides_layout.addWidget(psides_widget)
-                speed_accordion.add_widget(psides_row)
-                key = f"STAGE_{stage_num}_SPEED_{speed:.3f}_PSIDES"
-                self.characteristics_widgets[key] = psides_widget
+                # Set row labels (first column)
+                row_labels = ['PHIDES', 'PSIDES', 'ETADES']
+                for row_idx, row_label in enumerate(row_labels):
+                    label_item = QTableWidgetItem(row_label)
+                    label_item.setFlags(label_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # Read-only
+                    table.setItem(row_idx, 0, label_item)
                 
-                # ETADES
-                etades_row = QWidget()
-                etades_layout = QHBoxLayout(etades_row)
-                etades_layout.setContentsMargins(0, 0, 0, 0)
-                etades_label = QLabel(f"ETADES:")
-                etades_label.setToolTip("Stage Adiabatic Efficiency At Design Speed")
-                etades_label.setFixedWidth(80)
-                etades_widget = QLineEdit()
-                etades_layout.addWidget(etades_label)
-                etades_layout.addWidget(etades_widget)
-                speed_accordion.add_widget(etades_row)
-                key = f"STAGE_{stage_num}_SPEED_{speed:.3f}_ETADES"
-                self.characteristics_widgets[key] = etades_widget
+                # Set column header
+                headers = [''] + [f'{i+1}' for i in range(num_points)]
+                table.setHorizontalHeaderLabels(headers)
+                
+                # Make first column narrower for labels
+                table.setColumnWidth(0, 80)
+                
+                # Create editable cells for values
+                for row in range(3):
+                    for col in range(1, num_points + 1):
+                        item = QTableWidgetItem('')
+                        table.setItem(row, col, item)
+                
+                # Stretch columns
+                header = table.horizontalHeader()
+                for col in range(1, num_points + 1):
+                    header.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
+                
+                # Set fixed height
+                table.resizeRowsToContents()
+                total_height = table.horizontalHeader().height()
+                for i in range(table.rowCount()):
+                    total_height += table.rowHeight(i)
+                table.setFixedHeight(total_height)
+                
+                # Disable scrollbars
+                table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                
+                # Store table reference with key
+                key = f"STAGE_{stage_num}_SPEED_{speed:.3f}_TABLE"
+                self.characteristics_widgets[key] = table
+                
+                speed_accordion.add_widget(table)
 
     def rebuild_bleed_table(self):
         """Dynamically create bleed table based on number of stages"""
@@ -518,48 +455,282 @@ class AXC1DInputEditor(QWidget):
         if num_stages <= 0:
             return
         
-        # Clear the section
+        # clear the section
         while self.bleed_table_section.content_layout.count() > 0:
             item = self.bleed_table_section.content_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         
         self.bleed_table = QTableWidget()
-        # Columns: PCT SPD + one for each stage
+        # columns: PCT SPD + one for each stage
         num_cols = num_stages + 1
         self.bleed_table.setColumnCount(num_cols)
         
-        # Set header labels: PCT SPD, Stage 1, Stage 2, etc.
+        # set header labels: PCT SPD, Stage 1, Stage 2, etc.
         headers = ['PCT SPD'] + [f'Stage {i}' for i in range(1, num_stages + 1)]
         self.bleed_table.setHorizontalHeaderLabels(headers)
         
-        # Bleed table speed points (5 points, not including 0.000)
+        # bleed table speed points (5 points, not including 0.000)
         bleed_speeds = [1.000, 0.900, 0.800, 0.700, 0.500]
         self.bleed_table.setRowCount(len(bleed_speeds))
         
-        # Populate with speed points and empty cells for stage values
+        # populate with speed points and empty cells for stage values
         for row, speed in enumerate(bleed_speeds):
-            # First column: speed point
+            # first column: speed point
             self.bleed_table.setItem(row, 0, QTableWidgetItem(f"{speed:.3f}"))
-            # Other columns: stage bleed values (initially 0.000)
+            # other columns: stage bleed values (initially 0.000)
             for col in range(1, num_cols):
                 self.bleed_table.setItem(row, col, QTableWidgetItem("0.000"))
         
-        # Stretch columns to fill table width
+        # stretch columns to fill table width
         header = self.bleed_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        # Shrink table height to fit rows exactly
+        # shrink table height to fit rows exactly
         self.bleed_table.resizeRowsToContents()
         total_height = self.bleed_table.horizontalHeader().height()
         for i in range(self.bleed_table.rowCount()):
             total_height += self.bleed_table.rowHeight(i)
         self.bleed_table.setFixedHeight(total_height)
         
-        # Disable scrollbars since everything is visible
+        # disable scrollbars since everything is visible
         self.bleed_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.bleed_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.bleed_table_section.add_widget(self.bleed_table)
+    
+    def populate_default_values(self):
+        """Populate all fields with default values from origin.axc1d"""
+        # input parameters defaults
+        defaults_si = {
+            'STAGES': '2.000',
+            'SPEEDS': '5.000',
+            'P_0_IN': '10.135',
+            'T_0_IN': '288.170',
+            'POINTS': '8.000',
+            'MOLE_WT': '28.970',
+            'RPM': '16042.797',
+            'MASS_FLOW': '33.248'
+        }
+        for key, value in defaults_si.items():
+            if key in self.input_params_widgets:
+                self.input_params_widgets[key].setText(value)
+        
+        # deviation factors defaults (all checked/1.0)
+        for widget in self.deviation_factors_widgets.values():
+            widget.setChecked(True)
+        
+        # specific heat coefficients defaults 
+        defaults_cpco = {
+            'CPCO_1': '0.23747E+00',
+            'CPCO_2': '0.21962E-04',
+            'CPCO_3': '-0.87791E-07',
+            'CPCO_4': '0.13991E-09',
+            'CPCO_5': '-0.78056E-13',
+            'CPCO_6': '0.15043E-16'
+        }
+        for key, value in defaults_cpco.items():
+            if key in self.specific_heat_widgets:
+                self.specific_heat_widgets[key].setText(value)
+        
+        # rebuild dynamic sections now that STAGES is set, which will populate "Stage Geometry" and "Characteristics"
+        self.rebuild_stage_sections()
+        
+        # stage geometry defaults 
+        stage_1_defaults = {
+            'STAGE_1_RT2': '25.4200',
+            'STAGE_1_RH2': '9.8910',
+            'STAGE_1_RT3': '24.6280',
+            'STAGE_1_RH3': '12.0880',
+            'STAGE_1_BET2M': '0.00',
+            'STAGE_1_CB2M': '0.00',
+            'STAGE_1_CB2MR': '0.00',
+            'STAGE_1_CB3MR': '0.00',
+            'STAGE_1_RK2M': '56.15',
+            'STAGE_1_RSOLM': '1.6800',
+            'STAGE_1_SK2M': '36.10'
+        }
+        stage_2_defaults = {
+            'STAGE_2_RT2': '23.9600',
+            'STAGE_2_RH2': '13.6040',
+            'STAGE_2_RT3': '23.5660',
+            'STAGE_2_RH3': '14.6960',
+            'STAGE_2_BET2M': '0.00',
+            'STAGE_2_CB2M': '0.00',
+            'STAGE_2_CB2MR': '0.00',
+            'STAGE_2_CB3MR': '0.00',
+            'STAGE_2_RK2M': '55.46',
+            'STAGE_2_RSOLM': '1.5700',
+            'STAGE_2_SK2M': '36.15'
+        }
+        
+        for key, value in {**stage_1_defaults, **stage_2_defaults}.items():
+            if key in self.stage_geometry_widgets:
+                self.stage_geometry_widgets[key].setText(value)
+        
+        # input characteristics defaults 
+        stage_1_chars = {
+            'STAGE_1_SPEED_1.000_TABLE_PHIDES': '0.3100  0.3500  0.3800  0.4200  0.4300  0.4400  0.4500  0.4600',
+            'STAGE_1_SPEED_1.000_TABLE_PSIDES': '0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000',
+            'STAGE_1_SPEED_1.000_TABLE_ETADES': '0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000',
+        }
+        stage_2_chars = {
+            'STAGE_2_SPEED_1.000_TABLE_PHIDES': '0.4000  0.4200  0.4400  0.4500  0.4600  0.4800  0.5100  0.5300',
+            'STAGE_2_SPEED_1.000_TABLE_PSIDES': '0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000',
+            'STAGE_2_SPEED_1.000_TABLE_ETADES': '0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000  0.0000',
+        }
+        
+        # Populate table cells from defaults
+        for key, value in {**stage_1_chars, **stage_2_chars}.items():
+            # Convert key from STAGE_X_SPEED_Y_TABLE_LABEL to STAGE_X_SPEED_Y_TABLE
+            table_key = key.rsplit('_', 1)[0]
+            row_label = key.rsplit('_', 1)[1]
+            
+            if table_key in self.characteristics_widgets:
+                table = self.characteristics_widgets[table_key]
+                if isinstance(table, QTableWidget):
+                    # Find row index based on label
+                    row_idx = {'PHIDES': 0, 'PSIDES': 1, 'ETADES': 2}.get(row_label, 0)
+                    # Split values and populate columns
+                    values = [v.strip() for v in value.split()]
+                    for col_idx, val in enumerate(values):
+                        if col_idx + 1 < table.columnCount():  # +1 because first column is labels
+                            table.setItem(row_idx, col_idx + 1, QTableWidgetItem(val))
+    
+    def extract_info(self):
+        """
+        Extract information from UI widgets and create a structured dict
+        """
+        config = {}
+        
+        # Extract SI Input Parameters
+        config["SI Input Parameters"] = {}
+        for key, widget in self.input_params_widgets.items():
+            try:
+                config["SI Input Parameters"][key] = float(widget.text())
+            except (ValueError, AttributeError):
+                config["SI Input Parameters"][key] = widget.text()
+        
+        # Extract Deviation Factors
+        config["Deviation Factors"] = {}
+        for key, widget in self.deviation_factors_widgets.items():
+            config["Deviation Factors"][key] = 1.0 if widget.isChecked() else 0.0
+        
+        # Extract Specific Heat Coefficients
+        config["Specific Heat Coefficients"] = {}
+        for key, widget in self.specific_heat_widgets.items():
+            try:
+                config["Specific Heat Coefficients"][key] = float(widget.text())
+            except (ValueError, AttributeError):
+                config["Specific Heat Coefficients"][key] = widget.text()
+        
+        # Extract Stage Geometry
+        config["Stage Geometry"] = {}
+        for key, widget in self.stage_geometry_widgets.items():
+            try:
+                config["Stage Geometry"][key] = float(widget.text())
+            except (ValueError, AttributeError):
+                config["Stage Geometry"][key] = widget.text()
+        
+        # Extract Characteristics - structured for solver: list of stages with points
+        config["Input Design Characteristics"] = []
+        
+        try:
+            num_stages = int(float(self.input_params_widgets['STAGES'].text() or 0))
+        except:
+            num_stages = 0
+        
+        for stage_num in range(1, num_stages + 1):
+            # For each stage, get the first speed point's data (1.000 PCT SPD)
+            table_key = f"STAGE_{stage_num}_SPEED_1.000_TABLE"
+            
+            if table_key in self.characteristics_widgets:
+                table = self.characteristics_widgets[table_key]
+                if isinstance(table, QTableWidget):
+                    # Extract phi (PHIDES), psi (PSIDES), eta (ETADES) values
+                    points = []
+                    
+                    # Number of columns - 1 (first column is labels)
+                    num_points = table.columnCount() - 1
+                    
+                    # For each characteristic point
+                    for col_idx in range(num_points):
+                        phi = 0.0
+                        psi = 0.0
+                        eta = 0.0
+                        
+                        # Row 0 = PHIDES, Row 1 = PSIDES, Row 2 = ETADES
+                        try:
+                            phi_item = table.item(0, col_idx + 1)
+                            phi = float(phi_item.text()) if phi_item and phi_item.text() else 0.0
+                        except:
+                            phi = 0.0
+                        
+                        try:
+                            psi_item = table.item(1, col_idx + 1)
+                            psi = float(psi_item.text()) if psi_item and psi_item.text() else 0.0
+                        except:
+                            psi = 0.0
+                        
+                        try:
+                            eta_item = table.item(2, col_idx + 1)
+                            eta = float(eta_item.text()) if eta_item and eta_item.text() else 0.0
+                        except:
+                            eta = 0.0
+                        
+                        points.append({
+                            "phi": phi,
+                            "psi": psi,
+                            "eta": eta
+                        })
+                    
+                    config["Input Design Characteristics"].append({
+                        "points": points
+                    })
+        
+        # Extract Efficiency Table
+        config["Efficiency Ratio Table"] = []
+        if self.efficiency_table:
+            for row in range(self.efficiency_table.rowCount()):
+                pctspd = self.efficiency_table.item(row, 0).text()
+                etarat = self.efficiency_table.item(row, 1).text()
+                config["Efficiency Ratio Table"].append({
+                    "PCTSPD": float(pctspd) if pctspd else 0.0,
+                    "ETARAT": float(etarat) if etarat else 0.0
+                })
+        
+        # Extract Bleed Table
+        config["Bleed Table"] = []
+        if self.bleed_table:
+            for row in range(self.bleed_table.rowCount()):
+                speed = self.bleed_table.item(row, 0).text()
+                stage_values = []
+                # Columns 1+ are stage bleed values
+                for col in range(1, self.bleed_table.columnCount()):
+                    value = self.bleed_table.item(row, col).text() if self.bleed_table.item(row, col) else "0.000"
+                    try:
+                        stage_values.append(float(value))
+                    except:
+                        stage_values.append(0.0)
+                config["Bleed Table"].append({
+                    "PCTSPD": float(speed) if speed else 0.0,
+                    "stage_values": stage_values
+                })
+        
+        # Extract Characteristic Tables
+        config["Characteristic Tables"] = []
+        for table in self.characteristic_tables:
+            table_data = []
+            for row in range(table.rowCount()):
+                pctspd = table.item(row, 0).text()
+                etarat = table.item(row, 1).text()
+                table_data.append({
+                    "PCTSPD": float(pctspd) if pctspd else 0.0,
+                    "ETARAT": float(etarat) if etarat else 0.0
+                })
+            config["Characteristic Tables"].append(table_data)
+        
+        # self.logger.info(f"Config: {json.dumps(config, indent=2, default=str)}")
+        return config
 
     def open_file(self):
         """

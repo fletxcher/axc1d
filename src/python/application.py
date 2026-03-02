@@ -1,3 +1,4 @@
+import json
 import sys
 import logging
 from PyQt6.QtCore import QTimer, QDateTime
@@ -7,10 +8,9 @@ from PyQt6.QtWidgets import  (
     QWidget, QStatusBar, 
     QLabel
 )
-from plotter import AXC1DPlotter
-from solver import AXC1DSolver
-from manager import AXC1DEventManager
-from editor import AXC1DInputEditor
+from src.python.plotter import AXC1DPlotter
+from src.python.solver import AXC1DSolver
+from src.python.editor import AXC1DInputEditor
 
 class AXC1DMainWindow(QMainWindow):
     """
@@ -40,12 +40,9 @@ class AXC1DMainWindow(QMainWindow):
 
         # setup logger
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
         self.logging_handler = logging.StreamHandler()
-        self.logging_handler.setLevel(logging.DEBUG)
-        # self.logging_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        self.logging_formatter = logging.Formatter("%(asctime)s - %(message)s")
-        self.logging_handler.setFormatter(self.logging_formatter)
+        self.logging_handler.setLevel(logging.INFO)
         self.logger.addHandler(self.logging_handler)
 
         # configure application window settings
@@ -53,14 +50,10 @@ class AXC1DMainWindow(QMainWindow):
         self.setGeometry(x, y, width, height)
         self.setFixedSize(width, height)
 
-        # setup the event manager
-        self.event_manager = AXC1DEventManager(logger = self.logger)
-
         # setup custom components
-        # self.editor = AXC1DTextEditor(logger = self.logger, event_manager = self.event_manager)
-        self.solver = AXC1DSolver(logger = self.logger, event_manager = self.event_manager)
-        self.editor = AXC1DInputEditor(logger = self.logger, event_manager = self.event_manager)
-        self.plotter = AXC1DPlotter(logger = self.logger, event_manager = self.event_manager)
+        self.solver = AXC1DSolver(logger = self.logger)
+        self.editor = AXC1DInputEditor(logger = self.logger)
+        self.plotter = AXC1DPlotter(logger = self.logger)
 
         # build menu bar
         self.menu_bar = self.menuBar()
@@ -109,12 +102,7 @@ class AXC1DMainWindow(QMainWindow):
         self.simulation_menu = self.menu_bar.addMenu("&Simulations")
         # menu option to run the simulation
         run_simulation_action = QAction("&Run Simulation", self)
-
-        # run_simulation_action.setEnabled(False) 
-        # subscribe to the open file event so that way the run simulation is only enabled once a file is opened
-        # self.event_manager.subscribe("open_file", lambda: run_simulation_action.setEnabled(True))
-        
-        run_simulation_action.triggered.connect(lambda: self.solver.run(**self.editor.extract_info()))
+        run_simulation_action.triggered.connect(lambda: self.solver.run(self.editor.extract_info()))
         # create a keyboard shortcut from running the simulation
         run_simulation_action.setShortcut(QKeySequence("Ctrl+R"))
         self.simulation_menu.addAction(run_simulation_action)
@@ -160,8 +148,6 @@ class AXC1DMainWindow(QMainWindow):
     def update_time(self):
         """
         Docstring for update_time
-        
-        :param self: Description
         """
         # update the time
         current_time = QDateTime.currentDateTime().toString("MM/dd/yyyy hh:mm:ss AP")
@@ -170,18 +156,13 @@ class AXC1DMainWindow(QMainWindow):
     def open_settings(self):
         """
         Docstring for open_settings
-        
-        :param self: Description
         """
         # open the settings menu
         self.logger.info(f"Edit Tables (Efficiency Ratio Table & Bleed Table)")
         self.logger.info(f"Edit Solver Settings")
         self.logger.info(f"Observe Logs")
-        
 
 application = QApplication(sys.argv)
 window = AXC1DMainWindow(application = application, title = "AXC1D", x = 500, y = 500, width = 1500, height = 800)
 window.show()
 sys.exit(application.exec())
-
-# python src/python/application.py
