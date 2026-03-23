@@ -58,26 +58,6 @@ class AXC1DMainWindow(QMainWindow):
         # build menu bar
         self.menu_bar = self.menuBar()
 
-        # file menu
-        self.file_menu = self.menu_bar.addMenu("&File")
-        # menu option to new file
-        new_file_action = QAction("&New File", self)
-        new_file_action.triggered.connect(self.editor.new_file)
-        new_file_action.setShortcut(QKeySequence("Ctrl+N"))
-        self.file_menu.addAction(new_file_action)
-
-        # menu option to open file
-        open_file_action = QAction("&Open File", self)
-        open_file_action.triggered.connect(self.editor.open_file)
-        open_file_action.setShortcut(QKeySequence("Ctrl+O"))
-        self.file_menu.addAction(open_file_action)
-
-        # menu option to save file
-        save_file_action = QAction("&Save File", self)
-        save_file_action.triggered.connect(self.editor.save_file)
-        save_file_action.setShortcut(QKeySequence("Ctrl+S"))
-        self.file_menu.addAction(save_file_action)
-
         # plots menu
         self.plot_menu = self.menu_bar.addMenu("&Plots")
         # menu option to add plots
@@ -98,28 +78,21 @@ class AXC1DMainWindow(QMainWindow):
         edit_plot_action.setShortcut(QKeySequence("Ctrl+E"))
         self.plot_menu.addAction(edit_plot_action)
 
+        # menu option to clear plots
+        clear_plot_action = QAction("&Clear Plots", self)
+        clear_plot_action.triggered.connect(self.plotter.clear_plots)
+        clear_plot_action.setShortcut(QKeySequence("Ctrl+E"))
+        self.plot_menu.addAction(clear_plot_action)
+
         # simulations menu
-        self.simulation_menu = self.menu_bar.addMenu("&Simulations")
+        self.simulation_menu = self.menu_bar.addMenu("&Simulation")
         # menu option to run the simulation
         run_simulation_action = QAction("&Run Simulation", self)
-        run_simulation_action.triggered.connect(lambda: self.solver.run(self.editor.extract_info()))
+        # run_simulation_action.triggered.connect(lambda: self.solver.run(self.editor.extract_info()))
+        run_simulation_action.triggered.connect(lambda: self.plotter.update(self.solver.run(self.editor.extract_info())))
         # create a keyboard shortcut from running the simulation
         run_simulation_action.setShortcut(QKeySequence("Ctrl+R"))
         self.simulation_menu.addAction(run_simulation_action)
-
-        # self.simulation_menu.addAction("&Edit Simulation Path")
-
-        self.settings_menu = self.menu_bar.addMenu("&Settings")
-        # menu option to open the settings menu
-        open_settings_action = QAction("&Open Settings", self)
-        open_settings_action.triggered.connect(self.open_settings)
-        open_settings_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
-        self.settings_menu.addAction(open_settings_action)
-        # menu option to close the application
-        exit_action = QAction("&Exit", self)
-        exit_action.triggered.connect(self.application.quit)
-        exit_action.setShortcut(QKeySequence("Ctrl+X"))
-        self.settings_menu.addAction(exit_action)
 
         # create a workspace layout
         self.workspace = QHBoxLayout()

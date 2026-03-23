@@ -88,8 +88,8 @@ pip install -r requirments.txt
 
 ## Usage
 ```bash
-cd axc1d/src/python/
-python application.py
+cd axc1d/
+python -m src.python.application
 ```
 
 ## Methodology

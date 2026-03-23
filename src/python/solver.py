@@ -1,5 +1,6 @@
 import math 
 import logging
+import time
 from typing import List 
 
 class AXC1DSolver:
@@ -142,10 +143,10 @@ class AXC1DSolver:
                 )
                 vt3 = um3 - vz3_new * math.tan(b3) if abs(b3) < math.pi / 2 else 0.0
                 work = um3 * vt3 - um2 * vt2   # euler work (ft²/s²)
-                self.cpf(self.t0)
+                self.cpf(self.t0, self.specific_heat_coefficients)
                 dt_new  = work / (self.specific_heat * self.gj) if self.gj > 0 else 0.0
                 t3_new  = self.t0 + dt_new
-                self.cpf(t3_new)
+                self.cpf(t3_new, self.specific_heat_coefficients)
                 pr_approx = (t3_new / self.t0) ** self.gf2 if self.t0 > 0 else 1.0
                 pt3       = self.p0 * pr_approx
                 rho3 = pt3 / (self.rg * t3_new) if t3_new > 0 else rho2
@@ -326,7 +327,7 @@ class AXC1DSolver:
                             if cp_current > 0 else work / self.gj
                         )
                         t3 = self.t0 + dt
-                        self.cpf(t3)
+                        self.cpf(t3, self.specific_heat_coefficients)
 
                         if abs(t3 - t) < 0.1:
                             break
@@ -393,7 +394,7 @@ class AXC1DSolver:
                         else (pctspd * work) / self.gj
                     )
                     t3 = self.t0 + dt
-                    self.cpf(t3)
+                    self.cpf(t3, self.specific_heat_coefficients)
 
                     if abs(t3 - t) < 0.1:
                         break
@@ -476,7 +477,7 @@ class AXC1DSolver:
                     else work / self.gj if self.gj > 0 else 0.0
                 )
                 t3 = self.t0 + dt
-                self.cpf(t3)
+                self.cpf(t3, self.specific_heat_coefficients)
 
                 if abs(t3 - t) < 0.1:
                     break
@@ -577,7 +578,7 @@ class AXC1DSolver:
                     t_outlet = tt_inlet + 20.0  # initial guess
 
                     for _ in range(10):
-                        self.cpf(t_outlet)
+                        self.cpf(t_outlet, self.specific_heat_coefficients)
                         if self.specific_heat > 0 and self.gj > 0:
                             dt_isentropic = (psi * um3_current ** 2) / (
                                 self.specific_heat * self.gj
@@ -592,7 +593,7 @@ class AXC1DSolver:
                             break
                         t_outlet = t_outlet_new
 
-                    self.cpf(t_outlet)
+                    self.cpf(t_outlet, self.specific_heat_coefficients)
 
                     # stage pressure ratio (isentropic relation)
                     if t_outlet > 0 and tt_inlet > 0:
@@ -733,7 +734,7 @@ class AXC1DSolver:
         FIX 3: conditional sub-routine results are pre-initialised to None
                 so that references after the conditional blocks are safe.
         """
-       
+        start = time.time()
 
         # === INPUT PARAMETERS === #
         ip = list(dict(config["SI Input Parameters"]).values())
@@ -767,7 +768,7 @@ class AXC1DSolver:
         self.gj    = self.g   * self.aj
         self.g2j   = self.gj  * 2.0
 
-        self.cpf(self.t0)
+        self.cpf(self.t0, self.specific_heat_coefficients)
 
         # === UNIT CONVERSION === #
         if self.units == 1.0:
@@ -933,4 +934,10 @@ class AXC1DSolver:
 
         # === PERFORMANCE SWEEP === #
         csoupt_ = self.csoupt()
+
+        end = time.time()
+        elapsed = end - start
+        self.logger.info(f"Execution Time: {elapsed:.2f} Seconds")
+        
+        print(f"Output: {csoupt_}")
         return csoupt_
