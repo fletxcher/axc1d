@@ -9,14 +9,14 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+/build/
 develop-eggs/
-dist/
+/dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -111,3 +111,6 @@ cython_debug/
 # Extras
 trash/
 examples/
+# Node / Next.js (frontend has its own .gitignore too)
+/node_modules/
+/.next/
